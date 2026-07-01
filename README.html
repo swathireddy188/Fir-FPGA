@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FIR Filter — FPGA README</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6; max-width: 760px; margin: 0 auto; padding: 24px 18px 64px;
+    color: #1a1a1a; background: #fff; }
+  h1 { font-size: 1.55rem; line-height: 1.25; margin: 0 0 4px; }
+  h2 { font-size: 1.18rem; margin: 30px 0 10px; padding-bottom: 6px;
+       border-bottom: 2px solid #7c3aed; color: #5b21b6; }
+  blockquote { margin: 16px 0; padding: 10px 16px; border-left: 4px solid #7c3aed;
+    background: #f5f3ff; border-radius: 0 8px 8px 0; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 5px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.88em; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 10px;
+    overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+  pre code { background: none; padding: 0; color: inherit; }
+  ul { padding-left: 22px; } li { margin: 5px 0; }
+  .tag { display:inline-block; background:#ede9fe; color:#5b21b6; padding:2px 9px;
+    border-radius:999px; font-size:0.78rem; margin:2px 4px 2px 0; }
+  @media (prefers-color-scheme: dark) {
+    body { background:#0b1020; color:#e5e7eb; }
+    h2 { color:#c4b5fd; } blockquote { background:#1c1633; }
+    code { background:#1e293b; color:#e5e7eb; } .tag { background:#3b2d63; color:#ddd6fe; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Parameterized FIR Filter — FPGA (SystemVerilog)</h1>
+<p>A streaming, synthesizable <strong>FIR digital filter</strong> for Xilinx Artix-7 /
+Vivado, with a self-checking <strong>Questa/ModelSim</strong> testbench and a
+<strong>Python golden reference model</strong>. The canonical FPGA-DSP building block —
+RTL design, verification, and DSP fundamentals end to end.</p>
+
+<h2>What an FIR filter does</h2>
+<p>It shapes a stream of samples by taking a weighted sum of the current and previous inputs:</p>
+<pre><code>y[n] = c0*x[n] + c1*x[n-1] + ... + c(N-1)*x[n-(N-1)]</code></pre>
+<p>The coefficients define the response (low-pass, high-pass...). Change only the
+coefficients and the same hardware becomes a different filter.</p>
+
+<h2>Design</h2>
+<ul>
+  <li>Parameterized: <code>DATA_WIDTH</code>, <code>COEFF_WIDTH</code>, <code>N_TAPS</code>, coefficients.</li>
+  <li>Fully <strong>signed</strong>, <strong>full-precision</strong> output — matches the golden model bit-for-bit.</li>
+  <li>Streaming: assert <code>in_valid</code> with a sample, get <code>out_valid</code> + <code>out_data</code> one clock later.</li>
+  <li>Default 8-tap smoother: <code>{1,2,3,4,4,3,2,1}</code>.</li>
+</ul>
+
+<h2>Files</h2>
+<pre><code>fir-fpga/
+├── rtl/fir_filter.sv          synthesizable FIR (the design)
+├── tb/fir_filter_tb.sv        self-checking testbench
+├── model/fir_golden.py        Python reference model
+├── constraints/fir_filter.xdc Artix-7 timing constraints
+└── README.md</code></pre>
+
+<h2>Verify it (Questa)</h2>
+<pre><code>python3 model/fir_golden.py          # print verified expected values
+vlog rtl/fir_filter.sv tb/fir_filter_tb.sv
+vsim -c work.fir_filter_tb -do "run -all; quit"</code></pre>
+<p>Or in Vivado xsim:</p>
+<pre><code>xvlog -sv rtl/fir_filter.sv tb/fir_filter_tb.sv
+xelab fir_filter_tb -R</code></pre>
+<blockquote>Expect every sample to print <code>OK</code> and the summary <code>RESULT: PASS</code>.
+The impulse produces the coefficients scaled by 50 (50,100,150,200,200,150,100,50) —
+instant visual proof the filter is correct.</blockquote>
+
+<h2>Synthesize (Vivado)</h2>
+<ul>
+  <li>Target your Artix-7 part (e.g. xc7a35t for Arty A7).</li>
+  <li>Add the RTL and the XDC; fill in board-specific pin LOCs.</li>
+  <li>Run synthesis + implementation; check the timing report for positive WNS — your
+      timing-closure proof, same metric as your UART project.</li>
+</ul>
+
+<h2>Swap in a real filter (DSP extension)</h2>
+<pre><code>MATLAB:  b = fir1(7, 0.25);  coeffs = round(b * 64);
+Python:  coeffs = np.round(firwin(8, 0.25) * 64)</code></pre>
+<p>Put the integer coefficients in both <code>fir_golden.py</code> and the RTL
+<code>COEFFS</code> parameter, re-run the model to refresh expected values, re-simulate.
+The hardware never changes — only the numbers.</p>
+
+<h2>Skills demonstrated</h2>
+<p>
+  <span class="tag">SystemVerilog RTL</span>
+  <span class="tag">Parameterization</span>
+  <span class="tag">Signed fixed-point</span>
+  <span class="tag">Self-checking testbench</span>
+  <span class="tag">Golden-model verification</span>
+  <span class="tag">FIR / DSP theory</span>
+  <span class="tag">Vivado timing closure</span>
+</p>
+
+<h2>Where it goes next</h2>
+<ul>
+  <li>Pipeline the multiply-accumulate for higher clock rates</li>
+  <li>Symmetric-FIR fold to halve the multipliers</li>
+  <li>Wrap in AXI4-Stream for SoC integration</li>
+  <li>Add a UVM testbench on this already-verified design</li>
+</ul>
+
+</body>
+</html>

@@ -1,0 +1,12 @@
+# build / sim artifacts
+work/
+xsim.dir/
+*.jou
+*.log
+*.wdb
+*.pb
+*.vcd
+__pycache__/
+*.pyc
+.Xil/
+.DS_Store
